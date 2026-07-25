@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# datos y pesos: nunca al repo
+data/
+datasets/
+checkpoints/
+*.pth
+*.pyth
+*.tar.gz
+outputs/
+runs/
+wandb/
