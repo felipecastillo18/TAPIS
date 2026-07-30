@@ -7,7 +7,11 @@ class FrameClassificationHead(nn.Module):
 
     Contrato
     --------
-    Entrada : x (B, N, 768)  tokens de salida de MViT, con class token en x[:, 0]
+    Entrada : cls_token (B, dim_in)   -- el class token que devuelve mvit.py
+              (en el repo oficial esto vive dentro de TransformerBasicHead,
+              que recibe la secuencia completa y hace x[:, cls_idx]; aqui
+              mvit.py ya separa el cls token, asi que esta cabeza es un
+              Linear puro sobre el).
     Salida  : logits (B, num_classes)
 
     Es literalmente un Linear sobre el class token (mas dropout). En multitarea
@@ -22,4 +26,10 @@ class FrameClassificationHead(nn.Module):
 
     def __init__(self, dim_in=768, num_classes=11, dropout_rate=0.5):
         super().__init__()
+        raise NotImplementedError(
+            "Implementar: self.dropout (nn.Dropout), self.projection "
+            "(nn.Linear(dim_in, num_classes))."
+        )
+
+    def forward(self, cls_token):
         raise NotImplementedError
