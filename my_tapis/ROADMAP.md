@@ -27,8 +27,8 @@ con el siguiente.
 
 | # | Archivo | Qué enseña | Estado |
 |---|---------|------------|--------|
-| 1 | `models/patch_embed.py` | Tokenización 3D con Conv3d solapada | stub |
-| 2 | `models/attention.py` | Multiscale Pooling Attention (MHPA): el corazón de MViT | stub |
+| 1 | `models/patch_embed.py` | Tokenización 3D con Conv3d solapada | ✅ hecho |
+| 2 | `models/attention.py` | Multiscale Pooling Attention (MHPA): el corazón de MViT | en curso |
 | 3 | `models/block.py` | Ensamblar attn+MLP con pre-norm y el shortcut "pooled" | stub |
 | 4 | `models/mvit.py` | Backbone completo: cls token + pos embed + pila de bloques | stub |
 | 5 | `models/frame_head.py` | Cabeza de fase/paso sobre el class token | stub |

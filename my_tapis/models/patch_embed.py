@@ -28,7 +28,12 @@ class PatchEmbed(nn.Module):
     def __init__(self, dim_in=3, dim_out=96, kernel=(3, 7, 7),
                  stride=(2, 4, 4), padding=(1, 3, 3)):
         super().__init__()
-        raise NotImplementedError("Implementar: Conv3d + flatten + transpose")
+
+        self.conv = nn.Conv3d(in_channels=dim_in, out_channels=dim_out, kernel_size=kernel, stride=stride, padding=padding)
 
     def forward(self, x: torch.Tensor):
-        raise NotImplementedError
+
+        res_conv = self.conv(x)
+        thw = [res_conv.shape[2], res_conv.shape[3], res_conv.shape[4]]
+        x_final = torch.Tensor.flatten(res_conv, 2 , -1).transpose(1, 2) # Solo quiero aplanar las últimas 3 coordenadas de mi tensor. (temporal, w, h)
+        return x_final, thw

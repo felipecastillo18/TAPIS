@@ -4,7 +4,7 @@ Referencia oficial: GraSP/TAPIS/tapis/models/attention.py::MultiScaleAttention
 """
 import torch
 import torch.nn as nn
-
+import numpy as np
 
 def attention_pool(tensor, pool, thw_shape, has_cls_embed=True):
     """Aplica una capa de pooling 3D (o None) a un tensor de tokens.
@@ -33,10 +33,16 @@ def attention_pool(tensor, pool, thw_shape, has_cls_embed=True):
 
     if has_cls_embed:
         cls_tok, tensor = tensor[:, :, :1, :], tensor[:, :, 1:, :]
+        # Guardo por una parte el class token y por otra el resto del tensor
 
     B, N, L, C = tensor.shape
+        # batch
+        # num_heads
+        # num_tokens espaciales (tokens que no son cls)
+        # head_dim
     T, H, W = thw_shape
     assert L == T * H * W, f"L={L} no coincide con T*H*W={T*H*W}"
+    # los tokens espaciales deberían ser iguales al producto de T*H*W
 
     tensor = tensor.reshape(B * N, T, H, W, C).permute(0, 4, 1, 2, 3).contiguous()
     tensor = pool(tensor)
@@ -106,12 +112,37 @@ class MultiScaleAttention(nn.Module):
         has_cls_embed=True,
     ):
         super().__init__()
-        raise NotImplementedError(
-            "Implementar: self.qkv (Linear dim->3*dim_out), self.proj "
-            "(Linear dim_out->dim_out), y self.pool_q/self.pool_k/self.pool_v "
-            "(nn.Conv3d depthwise, groups=dim_out//num_heads, o None si "
-            "kernel/stride son (1,1,1))."
-        )
+        self.qkv = nn.Linear(dim, 3*dim_out, bias=qkv_bias)
+        self.proj = nn.Linear(dim_out, dim_out)
+        self.num_heads = num_heads
+        self.head_dim = dim_out // num_heads
+        self.scale = self.head_dim ** -0.5
+        self.has_cls_embed = has_cls_embed
+        self.dim_out = dim_out
+
+        if np.prod(kernel_q) == 1 and np.prod(stride_q) == 1:
+            self.pool_q = None
+            self.norm_q = None
+        else:
+            padding_q = [k//2 for k in kernel_q]
+            self.pool_q = nn.Conv3d(self.head_dim, self.head_dim, kernel_size=kernel_q, stride=stride_q, padding=padding_q, groups=self.head_dim, bias = False)
+            self.norm_q = nn.LayerNorm(self.head_dim)
+
+        if np.prod(kernel_kv) == 1 and np.prod(stride_kv) == 1:
+            self.pool_k = None
+            self.pool_v = None
+            self.norm_k = None
+            self.norm_v = None
+        else:    
+            padding_kv = [k//2 for k in kernel_kv]
+            self.pool_k = nn.Conv3d(self.head_dim, self.head_dim, kernel_size=kernel_kv, stride=stride_kv, padding=padding_kv, groups=self.head_dim, bias=False)
+            self.pool_v = nn.Conv3d(self.head_dim, self.head_dim,  kernel_size=kernel_kv, stride=stride_kv, padding=padding_kv,groups=self.head_dim, bias= False)
+            self.norm_k = nn.LayerNorm(self.head_dim)
+            self.norm_v = nn.LayerNorm(self.head_dim)
+
+            
+        self.softmax = nn.Softmax(-1)
+
 
     def forward(self, x, thw_shape):
         """
@@ -125,4 +156,30 @@ class MultiScaleAttention(nn.Module):
              y aplicar self.proj.
           6. Devolver x, q_shape (el thw_shape resultante del pooling de Q).
         """
-        raise NotImplementedError
+        B, N, dim = x.shape
+
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+        # Permute: tengo (batch, token, cuál-de-qkv, cabeza, canal) y quiero (cuál-de-qkv, batch, cabeza, token, canal)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        q, q_shape = attention_pool(q, self.pool_q, thw_shape, has_cls_embed=self.has_cls_embed)
+        if self.norm_q is not None:
+            q = self.norm_q(q)
+
+        k, k_shape = attention_pool(k, self.pool_k, thw_shape, has_cls_embed=self.has_cls_embed)
+        if self.norm_k is not None:
+            k = self.norm_q(k)
+
+        v, v_shape = attention_pool(v, self.pool_v, thw_shape, has_cls_embed=self.has_cls_embed)
+        if self.norm_v is not None:
+            v = self.norm_v(v)
+
+        attn = self.softmax((q*self.scale) @ k.transpose(-2, -1))
+        N_out = torch.Tensor.prod(q_shape)
+        if self.has_cls_embed:
+            N_out += 1
+
+        x = (attn @ v).permute(0, 2, 1, 3).reshape(B, -1, self.dim_out)
+        x = self.proj(x)
+        return x, q_shape
+
