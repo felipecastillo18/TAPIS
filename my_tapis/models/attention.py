@@ -168,16 +168,13 @@ class MultiScaleAttention(nn.Module):
 
         k, k_shape = attention_pool(k, self.pool_k, thw_shape, has_cls_embed=self.has_cls_embed)
         if self.norm_k is not None:
-            k = self.norm_q(k)
+            k = self.norm_k(k)
 
         v, v_shape = attention_pool(v, self.pool_v, thw_shape, has_cls_embed=self.has_cls_embed)
         if self.norm_v is not None:
             v = self.norm_v(v)
 
         attn = self.softmax((q*self.scale) @ k.transpose(-2, -1))
-        N_out = torch.Tensor.prod(q_shape)
-        if self.has_cls_embed:
-            N_out += 1
 
         x = (attn @ v).permute(0, 2, 1, 3).reshape(B, -1, self.dim_out)
         x = self.proj(x)
