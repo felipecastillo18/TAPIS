@@ -29,8 +29,8 @@ con el siguiente.
 |---|---------|------------|--------|
 | 1 | `models/patch_embed.py` | Tokenización 3D con Conv3d solapada | ✅ hecho |
 | 2 | `models/attention.py` | Multiscale Pooling Attention (MHPA): el corazón de MViT | ✅ hecho |
-| 3 | `models/block.py` | Ensamblar attn+MLP con pre-norm y el shortcut "pooled" | en curso |
-| 4 | `models/mvit.py` | Backbone completo: cls token + pos embed + pila de bloques | stub |
+| 3 | `models/block.py` | Ensamblar attn+MLP con pre-norm y el shortcut "pooled" | ✅ hecho |
+| 4 | `models/mvit.py` | Backbone completo: cls token + pos embed + pila de bloques | en curso |
 | 5 | `models/frame_head.py` | Cabeza de fase/paso sobre el class token | stub |
 | 6 | `models/region_head.py` | La pieza distintiva de TAPIS: fusión región↔global por cross-attention | stub |
 | 7 | `models/losses.py` | Pérdida multi-tarea ponderada (frame + región) | stub |
