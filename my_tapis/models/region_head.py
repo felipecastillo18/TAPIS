@@ -56,17 +56,21 @@ class RegionClassificationHead(nn.Module):
     def __init__(self, dim_video, dim_region, num_classes, num_heads=4,
                  hidden_dim=512, num_layers=2, multi_label=True):
         super().__init__()
-        raise NotImplementedError(
-            "Implementar: self.region_proj (Linear dim_region->dim_video); "
-            "self.decoder = nn.TransformerDecoder(decoder_layer, num_layers), "
-            "donde decoder_layer = nn.TransformerDecoderLayer(dim_video, "
-            "num_heads, dim_feedforward=hidden_dim, batch_first=True) -- "
-            "OJO: batch_first va en TransformerDecoderLayer, NO en "
-            "TransformerDecoder (TransformerDecoder solo recibe la layer y "
-            "num_layers, no acepta ese kwarg); "
-            "self.classifier (Linear dim_video->num_classes). Guardar "
-            "multi_label para saber si la loss sera BCE o CrossEntropy."
-        )
+        self.region_proj = nn.Linear(dim_region, dim_video)
+        decoder_layer = nn.TransformerDecoderLayer(dim_video, num_heads, dim_feedforward=hidden_dim, batch_first=True)
+        
+        self.decoder = nn.TransformerDecoder(decoder_layer=decoder_layer, num_layers=num_layers)
+        self.classifier = nn.Linear(dim_video, num_classes)
+        self.multi_label = multi_label  
 
     def forward(self, video_tokens, region_feats, region_mask):
-        raise NotImplementedError
+        x = self.region_proj(region_feats)
+        decoded = self.decoder(
+            tgt = x,
+            memory = video_tokens,
+            tgt_key_padding_mask = ~region_mask
+        )
+        x = decoded[region_mask]
+        logits = self.classifier(x)
+        return logits
+
