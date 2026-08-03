@@ -57,8 +57,13 @@ class RegionClassificationHead(nn.Module):
                  hidden_dim=512, num_layers=2, multi_label=True):
         super().__init__()
         raise NotImplementedError(
-            "Implementar: self.region_proj (Linear dim_region->dim_video), "
-            "self.decoder (nn.TransformerDecoder con batch_first=True), "
+            "Implementar: self.region_proj (Linear dim_region->dim_video); "
+            "self.decoder = nn.TransformerDecoder(decoder_layer, num_layers), "
+            "donde decoder_layer = nn.TransformerDecoderLayer(dim_video, "
+            "num_heads, dim_feedforward=hidden_dim, batch_first=True) -- "
+            "OJO: batch_first va en TransformerDecoderLayer, NO en "
+            "TransformerDecoder (TransformerDecoder solo recibe la layer y "
+            "num_layers, no acepta ese kwarg); "
             "self.classifier (Linear dim_video->num_classes). Guardar "
             "multi_label para saber si la loss sera BCE o CrossEntropy."
         )

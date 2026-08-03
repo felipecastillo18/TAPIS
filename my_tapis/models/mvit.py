@@ -175,6 +175,10 @@ class MViT(nn.Module):
 
         T, H, W = thw
         pos_embed = self.pos_embed_spatial.repeat(1, T, 1) + self.pos_embed_temporal.repeat_interleave(H * W, dim = 1)
+        if self.has_cls_embed:
+            pos_embed = torch.cat([self.pos_embed_class, pos_embed], dim = 1)
+
+        x = x + pos_embed
         for block in self.blocks:
             x, thw = block(x, thw)
 

@@ -26,10 +26,10 @@ class FrameClassificationHead(nn.Module):
 
     def __init__(self, dim_in=768, num_classes=11, dropout_rate=0.5):
         super().__init__()
-        raise NotImplementedError(
-            "Implementar: self.dropout (nn.Dropout), self.projection "
-            "(nn.Linear(dim_in, num_classes))."
-        )
+        self.dropout = nn.Dropout(p=dropout_rate)
+        self.projection = nn.Linear(dim_in, num_classes)
 
     def forward(self, cls_token):
-        raise NotImplementedError
+        x = self.dropout(cls_token)
+        x = self.projection(x)
+        return x
