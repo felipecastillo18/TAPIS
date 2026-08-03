@@ -65,6 +65,29 @@ class MViT(nn.Module):
     capas de transición de etapa (`stage_change_layers`); en las demás,
     dim_out == dim. Lo mismo aplica a stride_q: es (1,2,2) solo en esas
     capas, (1,1,1) en el resto.
+
+    LA TRAMPA #4 (has_cls_embed=False es un caso real, no un adorno): en
+    TAPIS_SHORT/ACTIONS/INSTRUMENTS.yaml, `CLS_EMBED_ON: False` (solo
+    LONG/PHASES/STEPS lo dejan en True). Verificado en video_model_builder.py
+    líneas 553-557 (init) y 850-856 (forward): cuando es False, **no existe**
+    `self.cls_token` ni `self.pos_embed_class` -- no se crean, no se
+    concatena nada, la secuencia se queda siendo solo los patches. Y en
+    head_helper.py::TransformerBasicHead.forward (ya visto en frame_head.py),
+    cuando `cls_embed=False` la cabeza de frame usa `x.mean(1)` (promedio de
+    TODOS los tokens) en vez de leer un token dedicado.
+    Para mantener el contrato de esta clase estable (siempre devolver un
+    `cls_token` de forma `(B, dim_final)`, sin importar el flag), cuando
+    `has_cls_embed=False` debes:
+      - NO crear self.cls_token ni self.pos_embed_class.
+      - NO concatenar nada extra a la secuencia (x se queda con solo patches).
+      - Al final, devolver `x.mean(1)` como "cls_token" (replicando lo que
+        hace TransformerBasicHead), y `x` completo (sin recortar el token 0,
+        porque no hay ningún token 0 especial) como `tokens`.
+    Ademas, `has_cls_embed` tiene que pasarse a CADA `MultiScaleBlock` (que a
+    su vez lo pasa a `MultiScaleAttention` y a `attention_pool`): si no,
+    `attention_pool` asumiria por default que el token 0 es un cls token y
+    lo excluiria del pooling espacial, corrompiendo la rejilla T,H,W cuando
+    en realidad ese token 0 es un patch normal.
     """
 
     def __init__(
@@ -80,45 +103,83 @@ class MViT(nn.Module):
         has_cls_embed=True,
     ):
         super().__init__()
-        raise NotImplementedError(
-            "Implementar:\n"
-            "1. self.patch_embed = PatchEmbed(dim_in, embed_dim, "
-            "kernel=(3,7,7), stride=(2,4,4), padding=(1,3,3))\n"
-            "2. Calcular patch_dims = [T,H,W] resultantes SIN correr nada: "
-            "para este kernel/stride/padding, T=num_frames//2, "
-            "H=W=crop_size//4 (division entera -- coincide exacto con la "
-            "formula de conv de patch_embed.py, verificalo si quieres).\n"
-            "3. self.cls_token = nn.Parameter(torch.zeros(1,1,embed_dim))\n"
-            "4. self.pos_embed_spatial = nn.Parameter(torch.zeros(1, H*W, embed_dim))\n"
-            "   self.pos_embed_temporal = nn.Parameter(torch.zeros(1, T, embed_dim))\n"
-            "   self.pos_embed_class = nn.Parameter(torch.zeros(1, 1, embed_dim))\n"
-            "   (nn.init.trunc_normal_(p, std=0.02) sobre los tres es buena "
-            "practica, no imprescindible para que el forward corra)\n"
-            "5. self.blocks = nn.ModuleList(...): recorrer range(depth), "
-            "llevando dim_actual (arranca en embed_dim) y un indice de etapa "
-            "(arranca en 0). En cada capa i: dim_out = stage_dims[etapa+1] "
-            "si i esta en stage_change_layers, si no dim_out = dim_actual. "
-            "stride_q = (1,2,2) si i esta en stage_change_layers, si no "
-            "(1,1,1). num_heads = stage_heads[etapa] (o stage_heads[etapa+1] "
-            "tras la transicion -- se consistente). Actualizar dim_actual = "
-            "dim_out despues de cada bloque, y avanzar la etapa cuando "
-            "corresponda.\n"
-            "6. self.norm = nn.LayerNorm(stage_dims[-1])"
-        )
+        self.patch_embed = PatchEmbed(dim_in, embed_dim, kernel = (3, 7, 7), stride=(2, 4, 4),
+                                    padding=(1, 3, 3))
+        T = num_frames // 2
+        H = crop_size // 4
+        W = H
+        patch_dims = [T, H, W]
+
+        self.has_cls_embed = has_cls_embed
+
+        if self.has_cls_embed:
+
+            self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+            self.pos_embed_class = nn.Parameter(torch.zeros(1, 1, embed_dim))
+
+        self.pos_embed_spatial = nn.Parameter(torch.zeros(1, H*W, embed_dim))
+        self.pos_embed_temporal = nn.Parameter(torch.zeros(1, T, embed_dim))
+
+        nn.init.trunc_normal_(self.pos_embed_spatial, std=0.02)
+        nn.init.trunc_normal_(self.pos_embed_temporal, std=0.02)
+
+        self.blocks = nn.ModuleList()
+        dim_actual = embed_dim
+        stage = 0
+        for i in range(depth):
+            if i in stage_change_layers:
+                stage += 1
+                dim_out = stage_dims[stage]
+                stride_q = (1, 2, 2)
+            else:
+                dim_out = dim_actual
+                stride_q = (1, 1, 1)
+
+            self.blocks.append(MultiScaleBlock(
+                dim=dim_actual,
+                dim_out=dim_out,
+                num_heads=stage_heads[stage],
+                stride_q=stride_q,
+                has_cls_embed=self.has_cls_embed,
+            ))
+            dim_actual = dim_out
+
+        self.norm = nn.LayerNorm(stage_dims[-1])
+
 
     def forward(self, x):
         """
         Pasos esperados:
           1. x, thw = self.patch_embed(x)
-          2. cls = self.cls_token.expand(x.shape[0], -1, -1)
-             x = torch.cat([cls, x], dim=1)
+          2. SOLO SI self.has_cls_embed:
+                cls = self.cls_token.expand(x.shape[0], -1, -1)
+                x = torch.cat([cls, x], dim=1)
           3. T, H, W = thw
              pos_embed = self.pos_embed_spatial.repeat(1, T, 1) \\
                  + self.pos_embed_temporal.repeat_interleave(H * W, dim=1)
-             pos_embed = torch.cat([self.pos_embed_class, pos_embed], dim=1)
+             SOLO SI self.has_cls_embed:
+                pos_embed = torch.cat([self.pos_embed_class, pos_embed], dim=1)
              x = x + pos_embed
           4. for block in self.blocks: x, thw = block(x, thw)
           5. x = self.norm(x)
-          6. return x[:, 0], x[:, 1:], thw   # cls_token, tokens, thw_shape
+          6. SI self.has_cls_embed: return x[:, 0], x[:, 1:], thw
+             SI NO:                 return x.mean(1), x, thw
+             (ver LA TRAMPA #4: sin cls token, "el resumen global" es el
+             promedio de todos los tokens, y no hay ningun token que recortar
+             de `tokens`)
         """
-        raise NotImplementedError
+        x, thw = self.patch_embed(x)
+        if self.has_cls_embed:
+            cls = self.cls_token.expand(x.shape[0], -1, -1)
+            x = torch.cat([cls, x], dim = 1)
+
+        T, H, W = thw
+        pos_embed = self.pos_embed_spatial.repeat(1, T, 1) + self.pos_embed_temporal.repeat_interleave(H * W, dim = 1)
+        for block in self.blocks:
+            x, thw = block(x, thw)
+
+        x = self.norm(x)
+        if self.has_cls_embed:
+            return x[:, 0], x[:, 1:], thw
+        else:
+            return x.mean(1), x, thw
