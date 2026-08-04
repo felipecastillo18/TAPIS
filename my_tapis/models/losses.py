@@ -6,6 +6,10 @@ nn.BCEWithLogitsLoss por nombre, mas una suma ponderada por lambdas de config).
 """
 import torch.nn as nn
 
+_LOSS_CLASSES = {
+    "cross_entropy": nn.CrossEntropyLoss,
+    "bce_logit": nn.BCEWithLogitsLoss,
+}
 
 class TapisMultiTaskLoss(nn.Module):
     """
@@ -42,11 +46,18 @@ class TapisMultiTaskLoss(nn.Module):
                 "instruments": 1.0}.
         """
         super().__init__()
-        raise NotImplementedError(
-            "Implementar: construir un nn.ModuleDict con la loss "
-            "correspondiente por tarea (nn.CrossEntropyLoss() o "
-            "nn.BCEWithLogitsLoss()), y guardar task_weights."
-        )
+
+        self.losses = nn.ModuleDict({
+            task: _LOSS_CLASSES[loss_name]()
+            for task, loss_name in task_losses.items()
+        })
+        self.task_weights = task_weights
+
 
     def forward(self, predictions, targets):
-        raise NotImplementedError
+        parts = {}
+        for task, loss_fn in self.losses.items():
+            parts[task] = loss_fn(predictions[task], targets[task])
+
+        total = sum(self.task_weights[task] * parts[task] for task in parts)
+        return total, parts

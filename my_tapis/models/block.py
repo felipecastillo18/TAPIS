@@ -149,5 +149,5 @@ class MultiScaleBlock(nn.Module):
         x_mlp = self.mlp(x_norm)
         if self.proj is not None:
             x = self.proj(x_norm)
-        x += x_mlp
+        x = x + x_mlp
         return x, thw_new

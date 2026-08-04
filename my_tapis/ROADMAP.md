@@ -33,10 +33,10 @@ con el siguiente.
 | 4 | `models/mvit.py` | Backbone completo: cls token + pos embed + pila de bloques | ✅ hecho |
 | 5 | `models/frame_head.py` | Cabeza de fase/paso sobre el class token | ✅ hecho |
 | 6 | `models/region_head.py` | La pieza distintiva de TAPIS: fusión región↔global por cross-attention | ✅ hecho |
-| 7 | `models/losses.py` | Pérdida multi-tarea ponderada (frame + región) | en curso |
-| 8 | `data/toy_dataset.py` | Dataset sintético (sin descargar GraSP) para probar formas | stub |
-| 9 | `scripts/train_toy.py` | Loop de entrenamiento end-to-end sobre datos falsos | stub |
-| 10 | `scripts/compare_with_official.py` | Verificación final cargando pesos reales de TAPIS | stub |
+| 7 | `models/losses.py` | Pérdida multi-tarea ponderada (frame + región) | ✅ hecho |
+| 8 | `data/toy_dataset.py` | Dataset sintético (sin descargar GraSP) para probar formas | ✅ hecho |
+| 9 | `scripts/train_toy.py` | Loop de entrenamiento end-to-end sobre datos falsos | ✅ hecho |
+| 10 | `scripts/compare_with_official.py` | Verificación final cargando pesos reales de TAPIS | pendiente (requiere pesos/datos reales de GraSP) |
 
 ## Simplificaciones deliberadas (y por qué)
 

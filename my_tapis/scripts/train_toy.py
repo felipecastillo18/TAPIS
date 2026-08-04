@@ -21,30 +21,48 @@ from my_tapis.models.losses import TapisMultiTaskLoss
 
 
 def main():
-    """
-    Pasos esperados:
-      1. dataset = ToyGraspDataset(...); loader = DataLoader(dataset, batch_size=4)
-      2. backbone = MViT(...)
-      3. frame_head = FrameClassificationHead(dim_in=<dim_final_de_mvit>, num_classes=num_phases)
-      4. region_head = RegionClassificationHead(dim_video=<dim_final_de_mvit>,
-             dim_region=dim_region, num_classes=num_instruments)
-      5. loss_fn = TapisMultiTaskLoss(
-             task_losses={"phases": "cross_entropy", "instruments": "bce_logit"},
-             task_weights={"phases": 1.0, "instruments": 1.0})
-      6. optimizer = torch.optim.Adam(list(backbone.parameters()) +
-             list(frame_head.parameters()) + list(region_head.parameters()), lr=1e-4)
-      7. Loop de N pasos:
-           - cls_token, tokens, thw = backbone(batch["clip"])
-           - phase_logits = frame_head(cls_token)
-           - instr_logits = region_head(tokens, batch["region_feats"], batch["region_mask"])
-           - instr_targets = batch["instruments"][batch["region_mask"]]  # aplanar igual que instr_logits
-           - loss, parts = loss_fn(
-                 {"phases": phase_logits, "instruments": instr_logits},
-                 {"phases": batch["phase"], "instruments": instr_targets})
-           - loss.backward(); optimizer.step(); optimizer.zero_grad()
-           - imprimir loss cada N pasos y verificar que baja
-    """
-    raise NotImplementedError
+    dataset = ToyGraspDataset()
+    loader = DataLoader(dataset=dataset, batch_size=4)
+
+    backbone = MViT()
+    frame_head = FrameClassificationHead(dim_in=384, num_classes=dataset.num_phases)
+    region_head = RegionClassificationHead(
+        dim_video=384,
+        dim_region=dataset.dim_region,
+        num_classes=dataset.num_instruments,
+    )
+    loss_fn = TapisMultiTaskLoss(
+        task_losses={"phases": "cross_entropy", "instruments": "bce_logit"},
+        task_weights={"phases": 1.0, "instruments": 1.0},
+    )
+    optimizer = torch.optim.Adam(
+        list(backbone.parameters())
+        + list(frame_head.parameters())
+        + list(region_head.parameters()),
+        lr=1e-4,
+    )
+
+    step = 0
+    for epoch in range(5):
+        for batch in loader:
+            cls_token, tokens, thw = backbone(batch["clip"])
+            phase_logits = frame_head(cls_token)
+            instr_logits = region_head(tokens, batch["region_feats"], batch["region_mask"])
+            instr_targets = batch["instruments"][batch["region_mask"]]
+
+            loss, parts = loss_fn(
+                {"phases": phase_logits, "instruments": instr_logits},
+                {"phases": batch["phase"], "instruments": instr_targets},
+            )
+
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+            step += 1
+            print(f"step {step:3d}  loss={loss.item():.4f}  "
+                  f"phases={parts['phases'].item():.4f}  "
+                  f"instruments={parts['instruments'].item():.4f}")
 
 
 if __name__ == "__main__":
