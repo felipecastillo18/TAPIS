@@ -16,3 +16,4 @@ checkpoints/
 outputs/
 runs/
 wandb/
+.DS_Store
